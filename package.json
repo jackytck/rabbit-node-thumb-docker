@@ -1,0 +1,21 @@
+{
+  "name": "node-thumb-docker",
+  "version": "0.0.1",
+  "author": "Jacky Tang",
+  "license": "MIT",
+  "scripts": {
+    "start": "node -r dotenv/config index.js",
+    "test": "jest"
+  },
+  "dependencies": {
+    "altiimagemagick": "^0.1.6",
+    "amqplib": "^0.5.2",
+    "chalk": "^2.3.1",
+    "dotenv": "^5.0.0",
+    "p-timeout": "^2.0.1"
+  },
+  "devDependencies": {
+    "jest": "^22.0.6",
+    "supertest": "^3.0.0"
+  }
+}
