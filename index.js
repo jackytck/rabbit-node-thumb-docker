@@ -4,8 +4,6 @@ const config = require('./config')
 const im = require('altiimagemagick')
 
 let rabbitChannel
-let successQueue
-let failQueue
 
 /**
  * Setup rabbit.
@@ -24,12 +22,6 @@ async function connectRabbit () {
     const connection = await amqp.connect(uri)
 
     rabbitChannel = await connection.createChannel()
-    successQueue = `${queue}-success`
-    failQueue = `${queue}-fail`
-
-    await rabbitChannel.assertQueue(successQueue, { durable: true })
-    await rabbitChannel.assertQueue(failQueue, { durable: true })
-
     await rabbitChannel.assertQueue(queue, { durable: true })
     rabbitChannel.prefetch(+config.concurrency)
     rabbitChannel.consume(queue, work)
@@ -48,34 +40,46 @@ async function connectRabbit () {
  *   width: 64,
  *   height: 64,
  *   keepAspect: false,
- *   successCallback: true,
- *   errorCallback: false
+ *   done: [{
+ *     queue: "any-next-queue",
+ *     msg: "any msg"
+ *   }],
+ *   error: [{
+ *     queue: "any-error-queue",
+ *     msg: "any msg"
+ *   }]
  * }
  */
 async function work (message) {
   let msg = {}
   try {
+    // a. Parse and log message
     console.log(chalk.cyan('Received a message:'))
     msg = JSON.parse(message.content.toString())
     console.log(msg)
+
     if (!checkMessage(msg)) {
-      if (msg.errorCallback) {
-        await rabbitChannel.sendToQueue(failQueue, new Buffer(JSON.stringify(msg)), { persistent: true })
-      }
+      // b. Expected error
+      await sendCallback(msg, 'error')
+      console.log('Failed')
     } else {
+      // c. Image ops
       await resizeImage(msg.srcPath, msg.dstPath, msg.width, msg.height, msg.keepAspect)
-      if (msg.successCallback) {
-        await rabbitChannel.sendToQueue(successQueue, new Buffer(JSON.stringify(msg)), { persistent: true })
-      }
+      await sendCallback(msg)
+      console.log('Done')
     }
   } catch (err) {
-    if (msg.errorCallback) {
-      await rabbitChannel.sendToQueue(failQueue, new Buffer(JSON.stringify(msg)), { persistent: true })
-    }
+    // d. Unexpected error
+    console.error(err)
+    await sendCallback(msg, 'error')
+    console.log('Failed')
   }
   rabbitChannel.ack(message)
 }
 
+/**
+ * Check essential data fields.
+ */
 function checkMessage (msg) {
   if (msg.srcPath && msg.dstPath && +msg.width > 0 && +msg.height > 0) {
     return true
@@ -84,14 +88,31 @@ function checkMessage (msg) {
 }
 
 /**
+ * Send callback message to custom 'done' or 'error' queues.
+ * type: done or error
+ */
+function sendCallback (message, type='done') {
+  if (!message[type] || message[type].length === 0) {
+    return
+  }
+
+  const jobs = message[type].map(msg => {
+    return rabbitChannel.assertQueue(msg.queue, { durable: true })
+      .then(() => rabbitChannel.sendToQueue(msg.queue, new Buffer(JSON.stringify(msg.msg))))
+  })
+
+  return Promise.all(jobs)
+}
+
+/**
  * Resize a image.
  */
 function resizeImage (srcPath, dstPath, width, height, keepAspect = false) {
   return new Promise((resolve, reject) => {
-    let height = `${height}^`
-    let customArgs = ['-gravity', 'center', '-extent', `${width}x${height}`]
+    let h = `${height}^`
+    let customArgs = ['-gravity', 'center', '-extent', `${width}x${h}`]
     if (keepAspect) {
-      height = ''
+      h = ''
       customArgs = ['-gravity', 'center']
     }
 
@@ -99,7 +120,7 @@ function resizeImage (srcPath, dstPath, width, height, keepAspect = false) {
       srcPath: srcPath,
       dstPath: dstPath,
       width,
-      height,
+      height: h,
       customArgs
     }, err => {
       if (err) {
