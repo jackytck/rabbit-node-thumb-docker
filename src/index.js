@@ -105,7 +105,8 @@ function sendCallback (message, type='done') {
 }
 
 /**
- * Resize a image.
+ * Resize (and center crop) a image.
+ * If keepAspect is true, width is fixed as specified, but height will be adjusted accordingly.
  */
 function resizeImage (srcPath, dstPath, width, height, keepAspect = false) {
   return new Promise((resolve, reject) => {
