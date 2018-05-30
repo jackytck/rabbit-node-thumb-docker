@@ -40,6 +40,7 @@ async function connectRabbit () {
     console.log(chalk.inverse(`Connected ${host}:${port}`))
   } catch (err) {
     console.error(err)
+    process.exit(1)
   }
 }
 
